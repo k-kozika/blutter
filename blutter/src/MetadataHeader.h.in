@@ -1,0 +1,3 @@
+#pragma once
+
+inline constexpr char kMetadataHeader[] = R"metadata(@METADATA_HEADER@)metadata";

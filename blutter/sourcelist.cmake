@@ -32,6 +32,10 @@ set(SRCS
     FridaWriter.cpp
     FridaWriter.h
     HtArrayIterator.h
+    MetadataWriter.cpp
+    MetadataWriter.h
+    MetadataNaming.h
+    Metadata.h
     Util.cpp
     Util.h
     VarValue.cpp

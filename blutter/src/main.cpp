@@ -3,6 +3,7 @@
 #include "DartDumper.h"
 #include "CodeAnalyzer.h"
 #include "FridaWriter.h"
+#include "MetadataWriter.h"
 #include "args.hxx"
 #include <filesystem>
 
@@ -57,6 +58,15 @@ int main(int argc, char** argv)
 		FridaWriter fwriter{ app };
 		fwriter.Create((outDir / "blutter_frida.js").string().c_str());
 
+		if (dart::kCompressedWordSize == sizeof(uint32_t)) {
+			std::cout << "Generating C++ metadata\n";
+			MetadataWriter mwriter{ app };
+			mwriter.Create((outDir / "blutter_meta.cpp").string().c_str());
+		}
+		else {
+			std::cout << "Skipping C++ metadata: requires 4-byte compressed Dart pointers\n";
+		}
+
 		app.ExitScope();
 	}
 	catch (args::Help&) {
@@ -75,6 +85,7 @@ int main(int argc, char** argv)
 	}
 	catch (std::exception& e) {
 		std::cerr << "exception: " << e.what() << "\n";
+		return 1;
 	}
 
 	return 0;

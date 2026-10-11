@@ -43,6 +43,12 @@ include(sourcelist.cmake)
 list(TRANSFORM SRCS PREPEND "${SRCDIR}/")
 add_executable(${BINNAME} ${SRCS})
 
+# Embed the public header so installed executables can export it without sources.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/src/Metadata.h")
+file(READ "${PROJECT_SOURCE_DIR}/src/Metadata.h" METADATA_HEADER)
+configure_file(src/MetadataHeader.h.in MetadataHeader.h @ONLY)
+target_include_directories(${BINNAME} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+
 target_link_libraries(${BINNAME} PRIVATE ${DARTLIB} capstone)
 
 target_precompile_headers(${BINNAME} PRIVATE "${SRCDIR}/pch.h")
