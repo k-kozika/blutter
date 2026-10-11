@@ -68,6 +68,9 @@ python3 blutter.py path/to/app/lib/arm64-v8a out_dir --rebuild
 - **blutter_frida.js** the frida script template for the target application
 - **objs.txt** complete (nested) dump of Object from Object Pool
 - **pp.txt** all Dart objects in Object Pool
+- **blutter_meta.cpp** C++ metadata for function/stub addresses, class IDs, string
+  fields of instances in Object Pool, and Dart object layout (compressed pointers only)
+- **blutter_meta.h** the standalone header for the generated C++ metadata
 
 
 ## Directories
