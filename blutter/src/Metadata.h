@@ -6,6 +6,9 @@ namespace blutter::meta {
 
 // String fields are byte offsets into Bundle::strings. Addresses are relative
 // to the libapp base; heap offsets include the Dart heap object tag.
+// A name may have multiple symbols with different addresses, including fully
+// qualified closure names. Symbols are sorted by (hash, name, rva); scan all
+// matching names within a hash range to retrieve every address.
 struct Symbol {
     uint32_t hash;
     uint32_t rva;

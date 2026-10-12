@@ -167,23 +167,19 @@ void MetadataWriter::Create(const char* filename) {
         }
     }
 
-    std::map<std::string, uint32_t> named_symbols;
-    const auto add_symbol = [&named_symbols](std::string name, uint32_t rva) {
-        // An unqualified name can refer to multiple libraries. Keep the lowest
-        // address deterministically; qualified names retain the distinct entries.
-        auto [entry, inserted] = named_symbols.emplace(std::move(name), rva);
-        if (!inserted) entry->second = std::min(entry->second, rva);
-    };
+    // Qualified names can still collide, e.g. anonymous closures in one class.
+    // Deduplicate aliases only when both the name and address are identical.
+    std::set<std::pair<std::string, uint32_t>> named_symbols;
     for (const auto& [address, function] : app.functions) {
         if (function == nullptr || function->Address() > 0xffffffffu) continue;
-        add_symbol(normalized_function(*function, false),
-                   static_cast<uint32_t>(function->Address()));
-        add_symbol(normalized_function(*function, true),
-                   static_cast<uint32_t>(function->Address()));
+        named_symbols.emplace(normalized_function(*function, false),
+                              static_cast<uint32_t>(function->Address()));
+        named_symbols.emplace(normalized_function(*function, true),
+                              static_cast<uint32_t>(function->Address()));
     }
     for (const auto& [address, stub] : app.stubs) {
         if (stub == nullptr || stub->Address() > 0xffffffffu) continue;
-        add_symbol(stub->FullName(), static_cast<uint32_t>(stub->Address()));
+        named_symbols.emplace(stub->FullName(), static_cast<uint32_t>(stub->Address()));
     }
     for (const auto& [name, rva] : named_symbols) {
         symbols.push_back({fnv1a(name), rva, strings.Add(name)});
@@ -191,8 +187,10 @@ void MetadataWriter::Create(const char* filename) {
     std::sort(symbols.begin(), symbols.end(), [&strings](const OutSymbol& left,
                                                         const OutSymbol& right) {
         if (left.hash != right.hash) return left.hash < right.hash;
-        return std::strcmp(strings.data.data() + left.name,
-                           strings.data.data() + right.name) < 0;
+        const int name_order = std::strcmp(strings.data.data() + left.name,
+                                          strings.data.data() + right.name);
+        if (name_order != 0) return name_order < 0;
+        return left.rva < right.rva;
     });
 
     std::sort(classes.begin(), classes.end(), [](const OutClass& left, const OutClass& right) {
