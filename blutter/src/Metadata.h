@@ -1,8 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <string_view>
 
 namespace blutter::meta {
+
+inline constexpr uint32_t kAbiVersion = 5;
 
 // String fields are byte offsets into Bundle::strings. Addresses are relative
 // to the libapp base; heap offsets include the Dart heap object tag.
@@ -30,6 +33,8 @@ struct Constant {
     uint32_t field;
     uint32_t value;
     uint32_t heap;
+    // UTF-8 byte count, excluding the terminator. The value may contain NULs.
+    uint32_t value_length;
 };
 
 struct Layout {
@@ -50,7 +55,8 @@ struct Layout {
 
 // Symbols and lookup indices are sorted by FNV-1a hash. Classes are sorted by
 // cid. Hash collisions must be resolved by comparing strings. Constant keys
-// hash the class, field and value, each followed by a zero byte.
+// hash the class, field and the entire value_length-byte value, each followed
+// by a zero byte. Class and field names are NUL-terminated.
 struct Bundle {
     uint32_t abi_version;
     uint32_t symbol_count;
@@ -67,5 +73,9 @@ struct Bundle {
 };
 
 const Bundle& blutter_bundle();
+
+inline std::string_view constant_value(const Bundle& bundle, const Constant& constant) {
+    return {bundle.strings + constant.value, constant.value_length};
+}
 
 }  // namespace blutter::meta

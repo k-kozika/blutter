@@ -1,7 +1,14 @@
 #include "pch.h"
 #include "MetadataWriter.h"
 #include "MetadataNaming.h"
+#include "Metadata.h"
 #include "MetadataHeader.h"
+
+#if __has_include(<vm/unicode.h>)
+#include <vm/unicode.h>
+#else
+#include <platform/unicode.h>
+#endif
 
 #include <cstring>
 #include <fstream>
@@ -15,7 +22,7 @@
 
 namespace {
 
-uint32_t fnv1a(const std::string& value) {
+uint32_t fnv1a(std::string_view value) {
     uint32_t hash = 2166136261u;
     for (unsigned char ch : value) {
         hash ^= ch;
@@ -24,11 +31,11 @@ uint32_t fnv1a(const std::string& value) {
     return hash;
 }
 
-uint32_t constant_hash(const std::string& cls, const std::string& field,
-                       const std::string& value) {
+uint32_t constant_hash(std::string_view cls, std::string_view field,
+                       std::string_view value) {
     uint32_t hash = 2166136261u;
-    for (const std::string* part : {&cls, &field, &value}) {
-        for (unsigned char ch : *part) {
+    for (std::string_view part : {cls, field, value}) {
+        for (unsigned char ch : part) {
             hash ^= ch;
             hash *= 16777619u;
         }
@@ -36,6 +43,19 @@ uint32_t constant_hash(const std::string& cls, const std::string& field,
         hash *= 16777619u;
     }
     return hash;
+}
+
+std::string utf8_string(const dart::Object& object) {
+    const auto& string = dart::String::Cast(object);
+    const intptr_t length = dart::Utf8::Length(string);
+    if (length < 0 || static_cast<uint64_t>(length) > std::numeric_limits<uint32_t>::max() - 2u) {
+        throw std::runtime_error("metadata string exceeds 32-bit length");
+    }
+    std::string value(static_cast<size_t>(length), '\0');
+    if (length != 0) {
+        string.ToUTF8(reinterpret_cast<uint8_t*>(value.data()), length);
+    }
+    return value;
 }
 
 class StringPool {
@@ -64,7 +84,7 @@ public:
 struct OutSymbol { uint32_t hash, rva, name; };
 struct OutLookup { uint32_t hash, index; };
 struct OutClass { uint32_t cid, name; };
-struct OutConstant { uint32_t cls, field, value, heap; };
+struct OutConstant { uint32_t cls, field, value, heap, value_length; };
 
 std::string normalized_library(const DartLibrary& library) {
     std::string name = library.url;
@@ -157,13 +177,13 @@ void MetadataWriter::Create(const char* filename) {
             if (!pointer->IsHeapObject()) continue;
             value_object = pointer->Decompress(app.heap_base());
             if (!value_object.IsString()) continue;
-            const std::string value = value_object.ToCString();
+            const std::string value = utf8_string(value_object);
             const std::string field = field_name(owner, offset);
             const uint32_t heap_offset = static_cast<uint32_t>(static_cast<intptr_t>(object.ptr()));
             if (!seen_constants.emplace(heap_offset, field, value).second) continue;
             const uint32_t field_string_offset = strings.Add(field);
             constants.push_back({strings.Add(cls->Name()), field_string_offset,
-                                 strings.Add(value), heap_offset});
+                                 strings.Add(value), heap_offset, static_cast<uint32_t>(value.size())});
         }
     }
 
@@ -209,7 +229,8 @@ void MetadataWriter::Create(const char* filename) {
         const OutConstant& item = constants[i];
         constants_by_key.push_back({constant_hash(strings.data.data() + item.cls,
                                                    strings.data.data() + item.field,
-                                                   strings.data.data() + item.value),
+                                                   std::string_view(strings.data.data() + item.value,
+                                                                    item.value_length)),
                                     static_cast<uint32_t>(i)});
     }
     std::sort(constants_by_key.begin(), constants_by_key.end(),
@@ -246,8 +267,8 @@ void MetadataWriter::Create(const char* filename) {
     out << "};\nstatic constexpr Constant kConstants[] = {\n";
     if (constants.empty()) out << "  {},\n";
     for (const auto& item : constants) {
-        out << std::format("  {{{}u, {}u, {}u, {:#x}u}},\n",
-                           item.cls, item.field, item.value, item.heap);
+        out << std::format("  {{{}u, {}u, {}u, {:#x}u, {}u}},\n",
+                           item.cls, item.field, item.value, item.heap, item.value_length);
     }
     out << "};\nstatic constexpr LookupIndex kConstantsByKey[] = {\n";
     if (constants_by_key.empty()) out << "  {},\n";
@@ -255,7 +276,7 @@ void MetadataWriter::Create(const char* filename) {
         out << std::format("  {{{}u, {}u}},\n", item.hash, item.index);
     out << "};\n\nconst Bundle& blutter_bundle() {\n"
            "  static constexpr Bundle bundle = {\n"
-        << "    4u, // metadata ABI version\n"
+        << "    " << blutter::meta::kAbiVersion << "u, // metadata ABI version\n"
         << "    " << symbols.size() << "u, kSymbols,\n"
         << "    " << classes.size() << "u, kClasses, kClassesByName,\n"
         << "    " << constants.size() << "u, kConstants, kConstantsByKey,\n"
