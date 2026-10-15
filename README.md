@@ -55,6 +55,24 @@ python3 blutter.py path/to/app/lib/arm64-v8a out_dir
 ```
 The blutter.py will automatically detect the Dart version from the flutter engine and call executable of blutter to get the information from libapp.so.
 
+To limit C++ metadata to specific classes, repeat `--metadata-class`:
+
+```sh
+python3 blutter.py path/to/app.apk out_dir --rebuild \
+  --metadata-class MyHomePage \
+  --metadata-class 'package:app/main.dart::_MyHomePageState'
+```
+
+Each selector matches an exact class name or `library URL::class name`. Bare
+names select all classes with that name; unmatched selectors are errors before
+metadata files are written. The output includes the selected class IDs, their
+declared methods, and string-field constants from their instances (including
+inherited fields). Parent/child classes are not added automatically. Top-level
+functions and VM stubs are omitted when filtering. Without these options, full
+metadata is emitted. Analysis, assembly, and Frida outputs are unchanged.
+The native executable accepts the same repeatable `--metadata-class` option;
+it is also forwarded by `--dart-version` and `--vs-sln`.
+
 If the blutter executable for required Dart version does not exists, the script will automatically checkout Dart source code and compiling it.
 
 ## Update

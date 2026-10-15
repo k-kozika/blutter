@@ -14,6 +14,7 @@ int main(int argc, char** argv)
 	args::Group reqGrp(parser, "Required arguments", args::Group::Validators::All);
 	args::ValueFlag<std::string> infile(reqGrp, "infile", "libapp file", { 'i', "in" });
 	args::ValueFlag<std::string> outdir(reqGrp, "outdir", "out path", { 'o', "out"});
+	args::ValueFlagList<std::string> metadataClasses(parser, "class", "Include only this metadata class (name or library URL::name; repeatable)", { "metadata-class" });
 
 	try {
 		parser.ParseCLI(argc, argv);
@@ -61,7 +62,7 @@ int main(int argc, char** argv)
 		if (dart::kCompressedWordSize == sizeof(uint32_t)) {
 			std::cout << "Generating C++ metadata\n";
 			MetadataWriter mwriter{ app };
-			mwriter.Create((outDir / "blutter_meta.cpp").string().c_str());
+			mwriter.Create((outDir / "blutter_meta.cpp").string().c_str(), args::get(metadataClasses));
 		}
 		else {
 			std::cout << "Skipping C++ metadata: requires 4-byte compressed Dart pointers\n";

@@ -139,10 +139,28 @@ void emit_byte_pool(std::ostream& out, const std::vector<char>& values) {
 
 }  // namespace
 
-void MetadataWriter::Create(const char* filename) {
+void MetadataWriter::Create(const char* filename, const std::vector<std::string>& selectors) {
     if (dart::kCompressedWordSize != sizeof(uint32_t)) {
         throw std::runtime_error("metadata requires 4-byte compressed Dart pointers");
     }
+    std::set<const DartClass*> selected_classes;
+    for (const auto& selector : selectors) {
+        bool matched = false;
+        for (const DartClass* cls : app.classes) {
+            if (cls == nullptr || cls->IsTopClass()) continue;
+            if (selector == cls->Name() ||
+                selector == cls->Library().url + "::" + cls->Name()) {
+                selected_classes.insert(cls);
+                matched = true;
+            }
+        }
+        if (!matched) {
+            throw std::runtime_error("metadata class selector matched no classes: " + selector);
+        }
+    }
+    const auto included = [&](const DartClass* cls) {
+        return cls != nullptr && (selectors.empty() || selected_classes.contains(cls));
+    };
     StringPool strings;
     std::vector<OutClass> classes;
     std::vector<OutConstant> constants;
@@ -151,7 +169,7 @@ void MetadataWriter::Create(const char* filename) {
     std::vector<OutLookup> constants_by_key;
 
     for (DartClass* cls : app.classes) {
-        if (cls != nullptr) classes.push_back({cls->Id(), strings.Add(cls->Name())});
+        if (included(cls)) classes.push_back({cls->Id(), strings.Add(cls->Name())});
     }
 
     const auto& pool = app.GetObjectPool();
@@ -164,7 +182,7 @@ void MetadataWriter::Create(const char* filename) {
         const intptr_t cid = object.GetClassId();
         if (cid < dart::kNumPredefinedCids || !object.IsInstance()) continue;
         DartClass* cls = app.GetClass(cid);
-        if (cls == nullptr || cls->Size() < static_cast<intptr_t>(dart::Instance::NextFieldOffset())) continue;
+        if (!included(cls) || cls->Size() < static_cast<intptr_t>(dart::Instance::NextFieldOffset())) continue;
         const uintptr_t address = dart::UntaggedObject::ToAddr(object.ptr());
         for (uint32_t offset = dart::Instance::NextFieldOffset();
              offset + dart::kCompressedWordSize <= static_cast<uint32_t>(cls->Size());
@@ -192,14 +210,17 @@ void MetadataWriter::Create(const char* filename) {
     std::set<std::pair<std::string, uint32_t>> named_symbols;
     for (const auto& [address, function] : app.functions) {
         if (function == nullptr || function->Address() > 0xffffffffu) continue;
+        if (!included(&function->Class())) continue;
         named_symbols.emplace(normalized_function(*function, false),
                               static_cast<uint32_t>(function->Address()));
         named_symbols.emplace(normalized_function(*function, true),
                               static_cast<uint32_t>(function->Address()));
     }
-    for (const auto& [address, stub] : app.stubs) {
-        if (stub == nullptr || stub->Address() > 0xffffffffu) continue;
-        named_symbols.emplace(stub->FullName(), static_cast<uint32_t>(stub->Address()));
+    if (selectors.empty()) {
+        for (const auto& [address, stub] : app.stubs) {
+            if (stub == nullptr || stub->Address() > 0xffffffffu) continue;
+            named_symbols.emplace(stub->FullName(), static_cast<uint32_t>(stub->Address()));
+        }
     }
     for (const auto& [name, rva] : named_symbols) {
         symbols.push_back({fnv1a(name), rva, strings.Add(name)});
